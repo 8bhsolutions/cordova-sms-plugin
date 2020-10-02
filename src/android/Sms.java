@@ -23,6 +23,9 @@ import org.json.JSONArray;
 import org.json.JSONException;
 
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 public class Sms extends CordovaPlugin {
 
@@ -181,30 +184,36 @@ public class Sms extends CordovaPlugin {
         // by creating this broadcast receiver we can check whether or not the SMS was sent
         final BroadcastReceiver broadcastReceiver = new BroadcastReceiver() {
 
-            boolean anyError = false; //use to detect if one of the parts failed
             int partsCount = parts.size(); //number of parts to send
+            private List<Integer> errors = new ArrayList<>();
 
             @Override
             public void onReceive(Context context, Intent intent) {
-                switch (getResultCode()) {
+                int resultCode = getResultCode();
+                switch (resultCode) {
                     case SmsManager.STATUS_ON_ICC_SENT:
                     case Activity.RESULT_OK:
                         break;
-                    case SmsManager.RESULT_ERROR_GENERIC_FAILURE:
-                    case SmsManager.RESULT_ERROR_NO_SERVICE:
-                    case SmsManager.RESULT_ERROR_NULL_PDU:
-                    case SmsManager.RESULT_ERROR_RADIO_OFF:
-                        anyError = true;
+
+                    // List of errors
+                    // https://developer.android.com/reference/android/telephony/SmsManager#sendTextMessage(java.lang.String,%20java.lang.String,%20java.lang.String,%20android.app.PendingIntent,%20android.app.PendingIntent)
+//                    case SmsManager.RESULT_ERROR_GENERIC_FAILURE:
+//                    case SmsManager.RESULT_ERROR_NO_SERVICE:
+//                    case SmsManager.RESULT_ERROR_NULL_PDU:
+//                    case SmsManager.RESULT_ERROR_RADIO_OFF:
+                    default:
+                        errors.add(resultCode);
                         break;
                 }
                 // trigger the callback only when all the parts have been sent
                 partsCount--;
                 if (partsCount == 0) {
-                    if (anyError) {
-                        callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR));
+                    if (errors.size() > 0) {
+                        Set<Integer> uniqueErrors = new HashSet<>(errors);
+                        callbackContext.error(uniqueErrors.toString());
                     }
                     else {
-                        callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK));
+                        callbackContext.success();
                     }
                     cordova.getActivity().unregisterReceiver(this);
                 }
