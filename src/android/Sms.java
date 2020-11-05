@@ -136,7 +136,20 @@ public class Sms extends CordovaPlugin {
                         callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK));
                     }
                     else {
-                        send(callbackContext, phoneNumber, message);
+                        try {
+                            send(callbackContext, phoneNumber, message);
+                        }
+                        catch (SecurityException e) {
+                            // FIX: Android 8 bug, where sendTextMessage required READ_PHONE_STATE runtime permission
+                            if (e.toString().contains(Manifest.permission.READ_PHONE_STATE)
+                                    && ContextCompat.checkSelfPermission(cordova.getContext(), Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+                                cordova.getActivity().runOnUiThread(() -> cordova.requestPermission(Sms.this, REQUEST_PERMISSION_READ_PHONE_STATE_REQ_CODE, Manifest.permission.READ_PHONE_STATE));
+                                // Will retry sending SMS after request permissions - see onRequestPermissionResult(), handles REQUEST_PERMISSION_READ_PHONE_STATE_REQ_CODE
+                            }
+                            else {
+                                throw e;
+                            }
+                        }
                     }
                     return;
                 }
@@ -226,28 +239,16 @@ public class Sms extends CordovaPlugin {
 
         PendingIntent sentIntent = PendingIntent.getBroadcast(this.cordova.getActivity(), 0, new Intent(intentFilterAction), 0);
 
-        try {
-            // depending on the number of parts we send a text message or multi parts
-            if (parts.size() > 1) {
-                ArrayList<PendingIntent> sentIntents = new ArrayList<PendingIntent>();
-                for (int i = 0; i < parts.size(); i++) {
-                    sentIntents.add(sentIntent);
-                }
-                manager.sendMultipartTextMessage(phoneNumber, null, parts, sentIntents, null);
+        // depending on the number of parts we send a text message or multi parts
+        if (parts.size() > 1) {
+            ArrayList<PendingIntent> sentIntents = new ArrayList<PendingIntent>();
+            for (int i = 0; i < parts.size(); i++) {
+                sentIntents.add(sentIntent);
             }
-            else {
-                manager.sendTextMessage(phoneNumber, null, message, sentIntent, null);
-            }
+            manager.sendMultipartTextMessage(phoneNumber, null, parts, sentIntents, null);
         }
-        catch (SecurityException e) {
-            // FIX: Android 8 bug, where sendTextMessage required READ_PHONE_STATE runtime permission
-            if (e.toString().contains(Manifest.permission.READ_PHONE_STATE)
-                    && ContextCompat.checkSelfPermission(this.cordova.getContext(), Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
-                cordova.requestPermission(this, REQUEST_PERMISSION_READ_PHONE_STATE_REQ_CODE, Manifest.permission.READ_PHONE_STATE);
-            }
-            else {
-                throw e;
-            }
+        else {
+            manager.sendTextMessage(phoneNumber, null, message, sentIntent, null);
         }
     }
 }
